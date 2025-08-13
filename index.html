@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="sl">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kupi .Onion — V2 (dual‑check + multi‑hop)</title>
+  <title>Buy .Onion — V2 (dual-check + multi-hop)</title>
   <style>
     html, body { margin:0; padding:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#0b0f17; color:#e6e8ec;}
     .wrap { max-width: 620px; margin: 40px auto; padding: 24px; background:#111827; border:1px solid #1f2937; border-radius: 16px; }
@@ -18,18 +18,25 @@
     .muted { color:#9aa4b2; font-size:13px; }
     .err { color:#ff6b6b; margin-top:8px; font-size:13px; white-space: pre-line;}
     .ok { color:#27c193; margin-top:8px; font-size:13px; white-space: pre-line;}
+    .lang-switch button { font-size:14px; padding:6px 10px;}
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>Kupi .Onion</h1>
-    <p class="muted">PCS V2 Router • BNB ali USDT (multi‑hop USDT→WBNB→.Onion) • naslovi v lowercase.</p>
+    <div class="row" style="justify-content: space-between; align-items:center;">
+      <h1 id="txt_title">Buy .Onion</h1>
+      <div class="lang-switch">
+        <button id="langSI" class="secondary">🇸🇮 SI</button>
+        <button id="langEN" class="primary">🇬🇧 EN</button>
+      </div>
+    </div>
+    <p class="muted" id="txt_sub">PCS V2 Router • BNB or USDT (multi-hop USDT→WBNB→.Onion) • addresses in lowercase.</p>
 
     <div class="card">
-      <div>Omrežje: <b id="net">—</b> • Denarnica: <b id="acct">—</b></div>
+      <div><span id="lbl_network">Network:</span> <b id="net">—</b> • <span id="lbl_wallet">Wallet:</span> <b id="acct">—</b></div>
       <div class="row" style="margin-top:12px;">
-        <button id="connect" class="primary">Poveži denarnico</button>
-        <button id="addTok" class="secondary">Dodaj .Onion v wallet</button>
+        <button id="connect" class="primary">Connect wallet</button>
+        <button id="addTok" class="secondary">Add .Onion to wallet</button>
       </div>
       <div id="status" class="ok" style="display:none;"></div>
       <div id="error" class="err" style="display:none;"></div>
@@ -38,27 +45,27 @@
     <div class="card">
       <div class="row">
         <div>
-          <label>Plačilo z</label>
+          <label id="lbl_payWith">Pay with</label>
           <select id="pay">
             <option>BNB</option>
             <option>USDT</option>
           </select>
         </div>
         <div>
-          <label>Slippage (%)</label>
+          <label id="lbl_slippage">Slippage (%)</label>
           <input id="slip" type="number" min="0.1" step="0.1" value="1.0" />
         </div>
       </div>
       <div class="row" style="margin-top:12px;">
         <div>
-          <label>Znesek</label>
-          <input id="amt" type="number" step="0.0001" placeholder="npr. 0.02 (BNB) ali 10 (USDT)"/>
+          <label id="lbl_amount">Amount</label>
+          <input id="amt" type="number" step="0.0001" placeholder="e.g. 0.02 (BNB) or 10 (USDT)"/>
         </div>
         <div>
           <label>&nbsp;</label>
           <div class="row">
-            <button id="quote" class="secondary">Kotacija</button>
-            <button id="buy" class="primary">Kupi</button>
+            <button id="quote" class="secondary">Quote</button>
+            <button id="buy" class="primary">Buy</button>
           </div>
         </div>
       </div>
@@ -68,117 +75,72 @@
 
   <script src="./ethers.umd.min.js"></script>
   <script>
-  (function(){
-    const TOKEN  = "0xf95a185f32aea4ae5e944bbc0f6c72687e607b0a";
-    const WBNB   = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c";
-    const USDT   = "0x55d398326f99059ff775485246999027b3197955";
-    const ROUTER = "0x10ed43c718714eb63d5aa57b78b54704e256024e";
-    const CHAIN  = "0x38";
-
-    const routerAbi = [
-      "function getAmountsOut(uint256 amountIn, address[] calldata path) external view returns (uint256[] memory amounts)",
-      "function swapExactETHForTokensSupportingFeeOnTransferTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) external payable",
-      "function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external"
-    ];
-    const erc20Abi = [
-      "function decimals() view returns (uint8)",
-      "function symbol() view returns (string)",
-      "function allowance(address owner, address spender) view returns (uint256)",
-      "function approve(address spender, uint256 amount) external returns (bool)"
-    ];
-
-    const $ = (id)=>document.getElementById(id);
-    const ok = (t)=>{ $("status").style.display="block"; $("status").textContent=t; $("error").style.display="none"; };
-    const err= (t)=>{ $("error").style.display="block"; $("error").textContent=t; $("status").style.display="none"; };
-    const fmt=(x,d=6)=>Number(x).toLocaleString('sl-SI',{maximumFractionDigits:d});
-
-    let provider, signer, account, router, usdt;
-
-    async function ensureChain(){
-      if(!window.ethereum) throw new Error("MetaMask ni zaznan.");
-      const id = await window.ethereum.request({method:"eth_chainId"});
-      if(id!==CHAIN){
-        await window.ethereum.request({method:"wallet_switchEthereumChain", params:[{chainId:CHAIN}]})
-          .catch(async()=>{
-            await window.ethereum.request({method:"wallet_addEthereumChain", params:[{chainId:CHAIN, chainName:"BSC", nativeCurrency:{name:"BNB",symbol:"BNB",decimals:18}, rpcUrls:["https://bsc-dataseed.binance.org/"], blockExplorerUrls:["https://bscscan.com/"]}]});
-            await window.ethereum.request({method:"wallet_switchEthereumChain", params:[{chainId:CHAIN}]});
-          });
-      }
+  // --- i18n ---
+  const i18n = {
+    si: {
+      title: "Kupi .Onion",
+      sub: "PCS V2 Router • BNB ali USDT (multi-hop USDT→WBNB→.Onion) • naslovi v lowercase.",
+      connect: "Poveži denarnico",
+      addtok: "Dodaj .Onion v wallet",
+      payWith: "Plačilo z",
+      slippage: "Slippage (%)",
+      amount: "Znesek",
+      placeholderAmount: "npr. 0.02 (BNB) ali 10 (USDT)",
+      quote: "Kotacija",
+      buy: "Kupi",
+      connected: "Denarnica povezana.",
+      network: "Omrežje:",
+      wallet: "Denarnica:"
+    },
+    en: {
+      title: "Buy .Onion",
+      sub: "PCS V2 Router • BNB or USDT (multi-hop USDT→WBNB→.Onion) • addresses in lowercase.",
+      connect: "Connect wallet",
+      addtok: "Add .Onion to wallet",
+      payWith: "Pay with",
+      slippage: "Slippage (%)",
+      amount: "Amount",
+      placeholderAmount: "e.g. 0.02 (BNB) or 10 (USDT)",
+      quote: "Quote",
+      buy: "Buy",
+      connected: "Wallet connected.",
+      network: "Network:",
+      wallet: "Wallet:"
     }
+  };
 
-    async function connect(){
-      try{
-        await ensureChain();
-        provider = new ethers.BrowserProvider(window.ethereum);
-        signer   = await provider.getSigner();
-        account  = await signer.getAddress();
-        router   = new ethers.Contract(ROUTER, routerAbi, signer);
-        usdt     = new ethers.Contract(USDT, erc20Abi, signer);
-        $("net").textContent="BSC (56)";
-        $("acct").textContent=account.slice(0,6)+"…"+account.slice(-4);
-        ok("Denarnica povezana.");
-      }catch(e){ err(e.message||String(e)); }
-    }
+  let LANG = localStorage.getItem("lang") || "en";
 
-    function toWei(amount,dec){ return BigInt(Math.floor(Number(amount)*(10**dec))); }
+  function setLang(lang){
+    LANG = (lang === "en") ? "en" : "si";
+    localStorage.setItem("lang", LANG);
+    applyLang();
+  }
 
-    async function getQuote(){
-      try{
-        await ensureChain();
-        if(!router) router = new ethers.Contract(ROUTER, routerAbi, await (new ethers.BrowserProvider(window.ethereum)).getSigner());
-        const pay = $("pay").value;
-        const amt = parseFloat($("amt").value);
-        if(!amt || amt<=0) throw new Error("Vnesi znesek.");
-        let path, amountIn, sym;
-        if(pay==="BNB"){
-          path=[WBNB, TOKEN];
-          amountIn=ethers.parseEther(String(amt));
-          sym="BNB";
-        }else{
-          const d = await (new ethers.Contract(USDT, ["function decimals() view returns (uint8)"], await (new ethers.BrowserProvider(window.ethereum)).getSigner())).decimals();
-          // multi-hop USDT -> WBNB -> .Onion
-          path=[USDT, WBNB, TOKEN];
-          amountIn=toWei(amt,d);
-          sym="USDT";
-        }
-        let amounts;
-        try{ amounts = await router.getAmountsOut(amountIn, path); }
-        catch(e){ throw new Error("Kotacija ni uspela (ni poti na PCS V2 ali 0 rezerve)."); }
-        const out = amounts[amounts.length-1];
-        const sl = Math.max(0.1, parseFloat($("slip").value||"1"));
-        const minOut = out - (out * BigInt(Math.floor(sl*1000)) / 100000n);
-        $("q").innerHTML = `Plačilo: <b>${fmt(amt)}</b> ${sym}<br>Prejmeš približno: <b>${fmt(Number(out)/1e18,8)}</b> .Onion<br>MinOut (${sl}%): <b>${fmt(Number(minOut)/1e18,8)}</b>`;
-        return {pay, amountIn, minOut, path};
-      }catch(e){ err(e.message||String(e)); throw e; }
-    }
+  function applyLang(){
+    const L = i18n[LANG];
+    document.getElementById("txt_title").textContent = L.title;
+    document.getElementById("txt_sub").innerHTML = L.sub;
+    document.getElementById("connect").textContent = L.connect;
+    document.getElementById("addTok").textContent = L.addtok;
+    document.getElementById("lbl_payWith").textContent = L.payWith;
+    document.getElementById("lbl_slippage").textContent = L.slippage;
+    document.getElementById("lbl_amount").textContent = L.amount;
+    document.getElementById("amt").placeholder = L.placeholderAmount;
+    document.getElementById("quote").textContent = L.quote;
+    document.getElementById("buy").textContent = L.buy;
+    document.getElementById("lbl_network").textContent = L.network;
+    document.getElementById("lbl_wallet").textContent = L.wallet;
 
-    async function buy(){
-      try{
-        const {pay, amountIn, minOut, path} = await getQuote();
-        const deadline = Math.floor(Date.now()/1000)+15*60;
-        if(pay==="BNB"){
-          const tx = await router.swapExactETHForTokensSupportingFeeOnTransferTokens(minOut, path, account, deadline, {value:amountIn});
-          ok("Nakup v teku …"); const rc = await tx.wait(); ok(`Uspeh! Tx: https://bscscan.com/tx/${rc.hash}`);
-        }else{
-          const allowance = await usdt.allowance(account, ROUTER);
-          if(allowance < amountIn){ ok("Approve USDT …"); const t=await usdt.approve(ROUTER, amountIn); await t.wait(); }
-          const tx = await router.swapExactTokensForTokensSupportingFeeOnTransferTokens(amountIn, minOut, path, account, deadline);
-          ok("Nakup v teku …"); const rc = await tx.wait(); ok(`Uspeh! Tx: https://bscscan.com/tx/${rc.hash}`);
-        }
-      }catch(e){ err(e.message||String(e)); }
-    }
+    document.getElementById("langSI").className = LANG==="si" ? "primary" : "secondary";
+    document.getElementById("langEN").className = LANG==="en" ? "primary" : "secondary";
+  }
 
-    async function addTok(){
-      try{
-        await window.ethereum.request({method:"wallet_watchAsset", params:{type:"ERC20", options:{address:TOKEN, symbol:".Onion", decimals:18}}});
-      }catch(e){ err(e.message||String(e)); }
-    }
-
-    document.getElementById('connect').addEventListener('click', connect);
-    document.getElementById('quote').addEventListener('click', getQuote);
-    document.getElementById('buy').addEventListener('click', buy);
-    document.getElementById('addTok').addEventListener('click', addTok);
-  })();
+  window.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("langSI").addEventListener("click", ()=>setLang("si"));
+    document.getElementById("langEN").addEventListener("click", ()=>setLang("en"));
+    applyLang();
+  });
   </script>
 </body>
 </html>
