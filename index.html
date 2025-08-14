@@ -18,7 +18,7 @@
     .muted{color:#9aa4b2;font-size:13px}
     .ok{color:#27c193;white-space:pre-line;font-size:13px;display:none}
     .err{color:#ff6b6b;white-space:pre-line;font-size:13px;display:none}
-    .lang{position:fixed;right:16px;top:16px;display:flex;gap:8px}
+    .lang{position:fixed;right:16px;top:16px;display:flex;gap:8px;z-index:10}
     .lang button{background:#1f2937;color:#e6e8ec;border:0;border-radius:8px;padding:6px 10px;font-weight:700}
     .lang button.active{background:#27c193;color:#08131a}
     @supports(padding:max(0px)){
@@ -27,6 +27,7 @@
   </style>
 </head>
 <body>
+  <!-- language switch -->
   <div class="lang">
     <button id="bEN" class="active">GB EN</button>
     <button id="bSI">SI SI</button>
@@ -39,7 +40,8 @@
     <div class="card">
       <div><span id="tNetwork">Network</span>: <b id="net">—</b> • <span id="tWallet">Wallet</span>: <b id="acct">—</b></div>
       <div class="row" style="margin-top:12px">
-        <button id="connect" class="primary" aria-live="polite" id="tConn">Connect wallet</button>
+        <!-- IMPORTANT: only ONE id attribute -->
+        <button id="connect" class="primary">Connect wallet</button>
         <button id="addTok" class="secondary">Add .Onion to wallet</button>
       </div>
       <div id="status" class="ok"></div>
@@ -66,8 +68,8 @@
         <div>
           <label>&nbsp;</label>
           <div class="row">
-            <button id="quote" class="secondary" id="tQuote">Quote</button>
-            <button id="buy" class="primary" id="tBuy">Buy</button>
+            <button id="quote" class="secondary">Quote</button>
+            <button id="buy" class="primary">Buy</button>
           </div>
         </div>
       </div>
@@ -127,7 +129,7 @@
       try{
         await ensureChain();
         provider = new ethers.BrowserProvider(window.ethereum);
-        // <- ključna vrstica, da MetaMask odpre dialog
+        // ključna vrstica – prisili MetaMask dialog
         await provider.send("eth_requestAccounts", []);
         signer   = await provider.getSigner();
         account  = await signer.getAddress();
